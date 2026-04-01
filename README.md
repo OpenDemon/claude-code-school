@@ -670,7 +670,6 @@ while (true) {
 ### 参考资料
 
 - [Claude Code 0331 系统报告（手工川）](https://mp.weixin.qq.com/s) — 基于 Source Map 泄露版本的深度技术分析，30 章 6 附录
-- [Claude Code 源码深度研究报告](https://github.com) — 聚焦 Agent 编排、Skills/MCP 生态的深度分析
 
 ### 官方文档
 
