@@ -53,42 +53,60 @@
     }
 
     /* ============================================================
-       移动端（≤768px）：侧边栏抽屉式，默认隐藏
+       移动端（≤768px）：侧边栏抽屉式，跟随 Docsify 原生 body.close 逻辑
     ============================================================ */
     @media (max-width: 768px) {
-      /* 侧边栏：默认隐藏在左侧屏幕外 */
+      /*
+       * Docsify 原生逻辑：
+       *   - 默认：body 无 close 类 → 侧边栏展开（left:0）
+       *   - 点击汉堡：body 加 close 类 → 侧边栏收起
+       * 我们在移动端反转这个逻辑：
+       *   - 默认（无 close）：隐藏（translateX(-100%)）
+       *   - 有 close 类时：也隐藏（Docsify 的收起状态）
+       *   - 点击汉堡后 Docsify 移除 close → 展开
+       * 但 Docsify 初始状态不一定有 close，所以用 JS 在初始化时加 close
+       */
+
+      /* 侧边栏基础样式 */
       .sidebar {
         position: fixed !important;
         top: 0 !important;
         left: 0 !important;
         width: 85vw !important;
         max-width: 320px !important;
-        height: 100% !important;
+        height: 100dvh !important;
+        height: 100vh !important;
         z-index: 200 !important;
         overflow-y: auto !important;
         -webkit-overflow-scrolling: touch !important;
-        transform: translateX(-100%) !important;
-        transition: transform 0.3s ease !important;
-        box-shadow: none !important;
+        transition: transform 0.28s cubic-bezier(0.4,0,0.2,1) !important;
         background: #fff !important;
+        box-shadow: none !important;
       }
 
-      /* 侧边栏展开状态 */
-      body.open .sidebar {
+      /* 收起状态（body.close 或 body 初始无 open 类）*/
+      body:not(.sidebar-open) .sidebar {
+        transform: translateX(-100%) !important;
+        box-shadow: none !important;
+      }
+
+      /* 展开状态 */
+      body.sidebar-open .sidebar {
         transform: translateX(0) !important;
-        box-shadow: 4px 0 20px rgba(0,0,0,0.15) !important;
+        box-shadow: 4px 0 24px rgba(0,0,0,0.18) !important;
       }
 
-      /* 遮罩层 */
-      body.open::after {
+      /* 遮罩层：展开时显示 */
+      body.sidebar-open::after {
         content: '';
         position: fixed;
         top: 0;
         left: 0;
         right: 0;
         bottom: 0;
-        background: rgba(0,0,0,0.4);
+        background: rgba(0,0,0,0.45);
         z-index: 199;
+        -webkit-tap-highlight-color: transparent;
       }
 
       /* 汉堡菜单按钮：移动端显示 */
@@ -100,11 +118,11 @@
         top: 12px !important;
         left: 12px !important;
         z-index: 300 !important;
-        width: 40px !important;
-        height: 40px !important;
+        width: 42px !important;
+        height: 42px !important;
         background: #E8632A !important;
-        border-radius: 8px !important;
-        box-shadow: 0 2px 8px rgba(232,99,42,0.4) !important;
+        border-radius: 10px !important;
+        box-shadow: 0 2px 10px rgba(232,99,42,0.45) !important;
         cursor: pointer !important;
       }
       .sidebar-toggle span {
@@ -114,7 +132,7 @@
       /* 内容区：不需要左边距 */
       .content {
         margin-left: 0 !important;
-        padding-top: 60px !important; /* 给顶部汉堡按钮留空间 */
+        padding-top: 64px !important;
       }
 
       /* 主内容区内边距 */
@@ -435,28 +453,30 @@
     mermaid.initialize({ startOnLoad: false, theme: 'default' });
     // 追加 Mermaid 插件，不覆盖已有插件（如 docsify-pagination）
     window.$docsify.plugins = (window.$docsify.plugins || []).concat([
-      // 在首页注入作者卡片
+      // 首页注入作者卡片 + 侧边栏底部作者卡片
       function(hook, vm) {
-        hook.afterEach(function(html, next) {
-          // 如果是首页（README.md），在标题后插入作者卡片
-          if (vm.route.path === '/' || vm.route.path === '') {
-            var authorCard = `
-              <div class="author-card">
-                <img class="author-qr-img" src="https://d2xsxph8kpxj0f.cloudfront.net/310519663498638152/movh5AgAvgbrggiNBCwBz2/xiaohongshu-qr_39098fef.jpg" alt="小红书二维码" />
-                <div class="author-info">
-                  <div class="author-name">李叔聊AI</div>
-                  <div class="author-desc">🚀 YC校友（OpenAI系）· 全栈开发 × 10年AI经验</div>
-                  <div class="author-links">
-                    <a href="https://github.com/OpenDemon/claude-code-school" target="_blank" class="author-link github-link">⭐ GitHub 开源</a>
-                  </div>
-                  <div class="qr-tip">← 扫码小红书关注我</div>
-                </div>
+        // 侧边栏底部作者卡片（用 DOM 操作，不写入 _sidebar.md）
+        // 首页内容区作者卡片已内嵌在 README.md 的 HTML 中，无需 JS 注入
+        hook.ready(function() {
+          var sidebar = document.querySelector('.sidebar');
+          if (!sidebar || document.getElementById('sidebar-author-card')) return;
+          var card = document.createElement('div');
+          card.id = 'sidebar-author-card';
+          card.className = 'author-card';
+          card.style.cssText = 'flex-direction:column;text-align:center;padding:14px 12px;margin:16px 8px 12px;gap:8px;';
+          card.innerHTML = `
+            <img class="author-qr-img" src="https://d2xsxph8kpxj0f.cloudfront.net/310519663498638152/movh5AgAvgbrggiNBCwBz2/xiaohongshu-qr_39098fef.jpg" alt="小红书二维码"
+              style="width:90px;height:90px;margin:0 auto;display:block;" />
+            <div class="author-info" style="text-align:center;">
+              <div class="author-name" style="font-size:0.95em;">李叔聊AI</div>
+              <div class="author-desc" style="font-size:0.72em;">🚀 YC校友（OpenAI系）· 10年AI经验</div>
+              <div class="author-links" style="margin-top:8px;">
+                <a href="https://github.com/OpenDemon/claude-code-school" target="_blank" class="author-link github-link" style="font-size:0.78em;">⭐ GitHub</a>
               </div>
-            `;
-            // 在首个 h2 标题前插入作者卡片
-            html = html.replace(/(<h2[^>]*>)/, authorCard + '$1');
-          }
-          next(html);
+              <div class="qr-tip" style="margin-top:4px;">↑ 扫码关注小红书</div>
+            </div>
+          `;
+          sidebar.appendChild(card);
         });
       },
       function(hook) {
@@ -479,21 +499,64 @@
     ]);
 
     // ============================================================
-    // 移动端：点击遮罩关闭侧边栏
+    // 移动端：自定义侧边栏开关逻辑（独立于 Docsify 原生逻辑）
     // ============================================================
-    document.addEventListener('click', function(e) {
-      if (window.innerWidth > 768) return;
-      var body = document.body;
-      // 点击遮罩（body::after 伪元素区域）关闭侧边栏
-      if (body.classList.contains('open')) {
-        var sidebar = document.querySelector('.sidebar');
-        var toggle = document.querySelector('.sidebar-toggle');
-        if (sidebar && !sidebar.contains(e.target) && toggle && !toggle.contains(e.target)) {
-          body.classList.remove('open');
-          body.classList.add('close');
-        }
+    (function() {
+      function isMobile() { return window.innerWidth <= 768; }
+
+      function openSidebar() {
+        document.body.classList.add('sidebar-open');
       }
-    });
+
+      function closeSidebar() {
+        document.body.classList.remove('sidebar-open');
+      }
+
+      // 拦截汉堡按钮点击，切换侧边栏
+      document.addEventListener('click', function(e) {
+        if (!isMobile()) return;
+        var toggle = document.querySelector('.sidebar-toggle');
+        var sidebar = document.querySelector('.sidebar');
+        if (!toggle || !sidebar) return;
+
+        if (toggle.contains(e.target)) {
+          // 点击汉堡按钮：切换开关
+          e.stopPropagation();
+          if (document.body.classList.contains('sidebar-open')) {
+            closeSidebar();
+          } else {
+            openSidebar();
+          }
+          return;
+        }
+
+        // 点击遮罩层（侧边栏外区域）：关闭侧边栏
+        if (document.body.classList.contains('sidebar-open')) {
+          if (!sidebar.contains(e.target)) {
+            closeSidebar();
+          }
+        }
+      }, true); // 用捕获阶段拦截，防止 Docsify 自己处理
+
+      // 点击侧边栏内的链接后自动关闭侧边栏
+      document.addEventListener('click', function(e) {
+        if (!isMobile()) return;
+        if (!document.body.classList.contains('sidebar-open')) return;
+        var sidebar = document.querySelector('.sidebar');
+        if (!sidebar) return;
+        // 如果点击的是侧边栏内的链接
+        if (sidebar.contains(e.target) && e.target.tagName === 'A') {
+          setTimeout(closeSidebar, 150);
+        }
+      });
+
+      // 页面大小变化时重置状态
+      window.addEventListener('resize', function() {
+        if (!isMobile()) {
+          closeSidebar();
+        }
+      });
+    })();
   </script>
   <!-- Code highlight -->
   <script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-typescript.min.js"></script>
