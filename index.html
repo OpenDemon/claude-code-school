@@ -276,6 +276,62 @@
     .token.regex, .token.important, .token.variable { color: #f38ba8; }
 
     /* ============================================================
+       作者卡片（侧边栏底部）
+    ============================================================ */
+    .author-card {
+      margin: 1.5em 0.5em 1em;
+      padding: 1em;
+      background: linear-gradient(135deg, #fff8f5 0%, #fff3ee 100%);
+      border: 1px solid #f0d5c8;
+      border-radius: 10px;
+      text-align: center;
+    }
+    .author-name {
+      font-weight: 700;
+      font-size: 1em;
+      color: #1a1a2e;
+      margin-bottom: 0.3em;
+    }
+    .author-desc {
+      font-size: 0.75em;
+      color: #666;
+      line-height: 1.5;
+      margin-bottom: 0.8em;
+    }
+    .author-links {
+      margin-bottom: 0.8em;
+    }
+    .author-link {
+      display: inline-block;
+      padding: 0.3em 0.8em;
+      border-radius: 20px;
+      font-size: 0.78em;
+      font-weight: 600;
+      text-decoration: none !important;
+      transition: all 0.2s;
+    }
+    .github-link {
+      background: #1a1a2e;
+      color: #fff !important;
+    }
+    .github-link:hover {
+      background: #E8632A;
+      transform: translateY(-1px);
+    }
+    .author-qr img {
+      width: 110px;
+      height: 110px;
+      border-radius: 8px;
+      border: 2px solid #f0d5c8;
+      display: block;
+      margin: 0 auto 0.4em;
+    }
+    .qr-tip {
+      font-size: 0.72em;
+      color: #999;
+    }
+
+    /* ============================================================
        分页导航
     ============================================================ */
     .pagination-item {

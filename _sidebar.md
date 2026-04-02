@@ -33,3 +33,15 @@
 - **相关链接**
   - [源码仓库（sanbuphy）](https://github.com/sanbuphy/claude-code-source-code)
   - [本教程 GitHub](https://github.com/OpenDemon/claude-code-school)
+
+<div class="author-card">
+  <div class="author-name">李叔聊AI</div>
+  <div class="author-desc">🚀 YC校友（OpenAI系）· 全栈开发 × 10年AI经验</div>
+  <div class="author-links">
+    <a href="https://github.com/OpenDemon/claude-code-school" target="_blank" class="author-link github-link">⭐ GitHub</a>
+  </div>
+  <div class="author-qr">
+    <img src="https://d2xsxph8kpxj0f.cloudfront.net/310519663498638152/movh5AgAvgbrggiNBCwBz2/xiaohongshu-qr_39098fef.jpg" alt="小红书二维码" />
+    <div class="qr-tip">扫码关注小红书</div>
+  </div>
+</div>

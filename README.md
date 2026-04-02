@@ -8,6 +8,18 @@
 
 ---
 
+<div style="display:flex;align-items:center;gap:16px;background:linear-gradient(135deg,#fff8f5,#fff3ee);border:1px solid #f0d5c8;border-radius:12px;padding:16px 20px;margin:16px 0">
+  <img src="https://d2xsxph8kpxj0f.cloudfront.net/310519663498638152/movh5AgAvgbrggiNBCwBz2/xiaohongshu-qr_39098fef.jpg" width="90" height="90" style="border-radius:8px;border:2px solid #f0d5c8;flex-shrink:0" alt="小红书二维码" />
+  <div>
+    <div style="font-weight:700;font-size:1.1em;color:#1a1a2e;margin-bottom:4px">李叔聊AI</div>
+    <div style="font-size:0.85em;color:#666;margin-bottom:8px">🚀 YC校友（OpenAI系）· 全栈开发 × 10年AI经验</div>
+    <a href="https://github.com/OpenDemon/claude-code-school" style="display:inline-block;background:#1a1a2e;color:#fff;padding:4px 12px;border-radius:20px;font-size:0.8em;font-weight:600;text-decoration:none;margin-right:8px">⭐ GitHub</a>
+    <span style="font-size:0.78em;color:#999">← 扫码关注小红书</span>
+  </div>
+</div>
+
+---
+
 ## 谁应该读这份教程？
 
 | 读者类型 | 收获 |
