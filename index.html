@@ -94,6 +94,17 @@
       padding: 0.8em 1em;
       margin: 1em 0;
     }
+    /* 强制侧边栏始终展开 */
+    .sidebar {
+      left: 0 !important;
+      transform: translateX(0) !important;
+    }
+    body.close .sidebar {
+      transform: translateX(0) !important;
+    }
+    .sidebar-toggle {
+      display: none !important;
+    }
   </style>
 </head>
 <body>
