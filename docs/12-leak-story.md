@@ -116,4 +116,4 @@ export default {
 
 ---
 
-> 回到开始：[Claude Code 是什么 →](docs/00-what-is-claude-code.md)
+> 回到开始：[Claude Code 是什么 →](#/docs/00-what-is-claude-code)

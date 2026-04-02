@@ -113,19 +113,19 @@ graph TB
 ## 选择你的阅读路径
 
 **完全不懂代码，想了解 AI Agent 是怎么工作的？**
-→ 按顺序读 [第 0 章](docs/00-what-is-claude-code.md) → [第 1 章](docs/01-architecture-overview.md) → [第 3 章](docs/03-agentic-loop.md)
+→ 按顺序读 [第 0 章](#/docs/00-what-is-claude-code) → [第 1 章](#/docs/01-architecture-overview) → [第 3 章](#/docs/03-agentic-loop)
 
 **想理解核心技术原理？**
-→ [第 3 章：代理循环](docs/03-agentic-loop.md) → [第 4 章：对话引擎](docs/04-query-engine.md) → [第 5 章：上下文压缩](docs/05-context-compression.md)
+→ [第 3 章：代理循环](#/docs/03-agentic-loop) → [第 4 章：对话引擎](#/docs/04-query-engine) → [第 5 章：上下文压缩](#/docs/05-context-compression)
 
 **想深入了解安全设计？**
-→ [第 6 章：工具与权限](docs/06-tools-permissions.md)
+→ [第 6 章：工具与权限](#/docs/06-tools-permissions)
 
 **想了解多 Agent 架构？**
-→ [第 7 章：多 Agent 协作](docs/07-multi-agent.md) → [第 8 章：MCP 集成](docs/08-mcp-integration.md)
+→ [第 7 章：多 Agent 协作](#/docs/07-multi-agent) → [第 8 章：MCP 集成](#/docs/08-mcp-integration)
 
 **想了解有趣的彩蛋和隐藏功能？**
-→ [第 12 章：隐藏命令与宠物系统](docs/12-hidden-commands.md) → [源码泄露的故事](docs/appendix-leak-story.md)
+→ [第 12 章：隐藏命令与宠物系统](#/docs/11-buddy-system) → [源码泄露的故事](#/docs/12-leak-story)
 
 ---
 

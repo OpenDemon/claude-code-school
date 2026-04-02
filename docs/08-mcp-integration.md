@@ -136,4 +136,4 @@ if __name__ == "__main__":
 
 ---
 
-> 下一章：[10 种运行模式 →](docs/09-running-modes.md)
+> 下一章：[10 种运行模式 →](#/docs/09-running-modes)

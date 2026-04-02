@@ -139,4 +139,4 @@ src/
 
 ---
 
-> 下一章：[代理循环：AI 的心跳 →](docs/03-agentic-loop.md)
+> 下一章：[代理循环：AI 的心跳 →](#/docs/03-agentic-loop)

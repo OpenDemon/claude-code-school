@@ -118,4 +118,4 @@ git worktree add ../agent-3-workspace feature/tests
 
 ---
 
-> 下一章：[MCP 集成与扩展 →](docs/08-mcp-integration.md)
+> 下一章：[MCP 集成与扩展 →](#/docs/08-mcp-integration)

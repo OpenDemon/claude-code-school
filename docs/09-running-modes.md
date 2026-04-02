@@ -88,4 +88,4 @@ function determineRunMode(args: Args, flags: FeatureFlags): RunMode {
 
 ---
 
-> 下一章：[记忆系统与 CLAUDE.md →](docs/10-memory-claude-md.md)
+> 下一章：[记忆系统与 CLAUDE.md →](#/docs/10-memory-claude-md)

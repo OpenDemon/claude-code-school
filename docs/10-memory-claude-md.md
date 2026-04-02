@@ -118,4 +118,4 @@ Claude Code 源码 `insights.ts` 里有一个主动学习机制：**定期分析
 
 ---
 
-> 下一章：[宠物系统与彩蛋 →](docs/11-buddy-system.md)
+> 下一章：[宠物系统与彩蛋 →](#/docs/11-buddy-system)

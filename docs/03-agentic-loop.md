@@ -174,4 +174,4 @@ for (const toolCall of writeTools) {
 
 ---
 
-> 下一章：[对话引擎深度解析 →](docs/04-query-engine.md)
+> 下一章：[对话引擎深度解析 →](#/docs/04-query-engine)

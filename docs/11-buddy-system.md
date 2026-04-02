@@ -130,4 +130,4 @@ Wibbling（发抖颤动）……
 
 ---
 
-> 下一章：[源码泄露的完整故事 →](docs/12-leak-story.md)
+> 下一章：[源码泄露的完整故事 →](#/docs/12-leak-story)

@@ -170,4 +170,4 @@ Claude Code 实时监控上下文使用情况，并在 UI 上显示：
 
 ---
 
-> 下一章：[工具系统与权限安全 →](docs/06-tools-permissions.md)
+> 下一章：[工具系统与权限安全 →](#/docs/06-tools-permissions)

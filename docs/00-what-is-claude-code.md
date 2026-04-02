@@ -79,4 +79,4 @@ Claude Code 能做到这一切，依靠三个核心能力：
 
 ---
 
-> 下一章：[整体架构一览 →](docs/01-architecture-overview.md)
+> 下一章：[整体架构一览 →](#/docs/01-architecture-overview)
