@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>Claude Code School — 源码架构学习教程</title>
+  <meta name="description" content="从零到一深度解析 Claude Code 源码架构，面向所有对 AI Agent 感兴趣的人">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/docsify-themeable@0/dist/css/theme-simple.css">
+  <style>
+    :root {
+      --base-font-size: 15px;
+      --theme-color: #E8632A;
+      --sidebar-width: 280px;
+      --sidebar-nav-link-color--active: #E8632A;
+      --sidebar-nav-link-border-color--active: #E8632A;
+      --code-theme-background: #1e1e2e;
+      --code-theme-text: #cdd6f4;
+      --code-inline-background: #f0f0f0;
+      --heading-color: #1a1a2e;
+    }
+    .markdown-section h1 {
+      border-bottom: 3px solid #E8632A;
+      padding-bottom: 0.4em;
+      color: #1a1a2e;
+    }
+    .markdown-section h2 {
+      border-left: 4px solid #E8632A;
+      padding-left: 0.6em;
+      margin-top: 2em;
+    }
+    .markdown-section table {
+      display: table;
+      width: 100%;
+    }
+    .markdown-section blockquote {
+      border-left: 4px solid #E8632A;
+      background: #fff8f5;
+      padding: 0.8em 1em;
+      color: #555;
+    }
+    .cover-main {
+      max-width: 640px;
+    }
+    .cover-main h1 {
+      font-size: 2.4em;
+      font-weight: 800;
+      color: #1a1a2e;
+    }
+    .cover-main blockquote {
+      font-size: 1.05em;
+      color: #555;
+      border: none;
+      background: none;
+    }
+    .app-name-link {
+      font-weight: 700;
+      font-size: 1.1em;
+    }
+    /* Sidebar group headings */
+    .sidebar-nav > ul > li > p {
+      font-weight: 700;
+      color: #E8632A;
+      font-size: 0.8em;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin: 1.2em 0 0.3em;
+    }
+    /* Code block styling */
+    .markdown-section pre {
+      border-radius: 8px;
+    }
+    /* Callout boxes */
+    .tip, .warning, .danger {
+      border-radius: 6px;
+      padding: 0.8em 1em;
+      margin: 1em 0;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">加载中...</div>
+  <script>
+    window.$docsify = {
+      name: '🎓 Claude Code School',
+      repo: 'https://github.com/OpenDemon/claude-code-school',
+      loadSidebar: true,
+      loadNavbar: false,
+      coverpage: true,
+      onlyCover: false,
+      subMaxLevel: 2,
+      auto2top: true,
+      relativePath: false,
+      search: {
+        maxAge: 86400000,
+        paths: 'auto',
+        placeholder: '搜索文档...',
+        noData: '没有找到结果',
+        depth: 4,
+      },
+      pagination: {
+        previousText: '上一章',
+        nextText: '下一章',
+        crossChapter: true,
+        crossChapterText: true,
+      },
+      copyCode: {
+        buttonText: '复制',
+        errorText: '错误',
+        successText: '已复制'
+      },
+      markdown: {
+        renderer: {
+          code(code, lang) {
+            if (lang === 'mermaid') {
+              return '<div class="mermaid">' + code + '</div>';
+            }
+            return this.origin.code.apply(this, arguments);
+          }
+        }
+      },
+      plugins: [],
+    }
+  </script>
+
+  <!-- Docsify core -->
+  <script src="https://cdn.jsdelivr.net/npm/docsify@4/lib/docsify.min.js"></script>
+  <!-- Plugins -->
+  <script src="https://cdn.jsdelivr.net/npm/docsify@4/lib/plugins/search.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/docsify-pagination/dist/docsify-pagination.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/docsify-copy-code/dist/docsify-copy-code.min.js"></script>
+  <!-- Mermaid -->
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({ startOnLoad: false, theme: 'default' });
+    window.$docsify.plugins = [
+      function(hook) {
+        hook.doneEach(function() {
+          document.querySelectorAll('.mermaid').forEach(function(el) {
+            if (el.getAttribute('data-processed')) return;
+            var code = el.textContent;
+            var id = 'mermaid-' + Math.random().toString(36).substr(2, 9);
+            try {
+              mermaid.render(id, code).then(function(result) {
+                el.innerHTML = result.svg;
+                el.setAttribute('data-processed', 'true');
+              });
+            } catch(e) {
+              console.warn('Mermaid render error:', e);
+            }
+          });
+        });
+      }
+    ];
+  </script>
+  <!-- Code highlight -->
+  <script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-typescript.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-bash.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-json.min.js"></script>
+</body>
+</html>
