@@ -49,9 +49,27 @@
     }
     .cover-main blockquote {
       font-size: 1.05em;
-      color: #555;
+      color: #2a2a2a;
       border: none;
       background: none;
+      font-weight: 500;
+    }
+    /* 封面页背景和文字颜色修复 */
+    section.cover {
+      background: linear-gradient(135deg, #e8f0f8 0%, #d0e4f0 50%, #b8d4e8 100%) !important;
+    }
+    section.cover .cover-main > p {
+      color: #1a1a2e;
+      font-weight: 500;
+    }
+    section.cover .cover-main ul {
+      list-style: none;
+      padding: 0;
+    }
+    section.cover .cover-main ul li {
+      color: #1a1a2e;
+      font-size: 1.05em;
+      padding: 0.2em 0;
     }
     .app-name-link {
       font-weight: 700;
@@ -86,7 +104,7 @@
       repo: 'https://github.com/OpenDemon/claude-code-school',
       loadSidebar: true,
       loadNavbar: false,
-      coverpage: true,
+      coverpage: false,
       onlyCover: false,
       subMaxLevel: 2,
       auto2top: true,
