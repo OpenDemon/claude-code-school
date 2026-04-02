@@ -278,34 +278,48 @@
     /* ============================================================
        作者卡片（侧边栏底部）
     ============================================================ */
+    /* 首页作者卡片 */
     .author-card {
-      margin: 1.5em 0.5em 1em;
-      padding: 1em;
+      display: flex;
+      align-items: center;
+      gap: 20px;
       background: linear-gradient(135deg, #fff8f5 0%, #fff3ee 100%);
       border: 1px solid #f0d5c8;
-      border-radius: 10px;
-      text-align: center;
+      border-radius: 12px;
+      padding: 16px 20px;
+      margin: 20px 0;
+    }
+    .author-qr-img {
+      width: 100px;
+      height: 100px;
+      border-radius: 8px;
+      border: 2px solid #f0d5c8;
+      flex-shrink: 0;
+      object-fit: cover;
+    }
+    .author-info {
+      flex: 1;
     }
     .author-name {
       font-weight: 700;
-      font-size: 1em;
+      font-size: 1.1em;
       color: #1a1a2e;
-      margin-bottom: 0.3em;
+      margin-bottom: 4px;
     }
     .author-desc {
-      font-size: 0.75em;
+      font-size: 0.85em;
       color: #666;
       line-height: 1.5;
-      margin-bottom: 0.8em;
+      margin-bottom: 10px;
     }
     .author-links {
-      margin-bottom: 0.8em;
+      margin-bottom: 6px;
     }
     .author-link {
       display: inline-block;
-      padding: 0.3em 0.8em;
+      padding: 4px 14px;
       border-radius: 20px;
-      font-size: 0.78em;
+      font-size: 0.82em;
       font-weight: 600;
       text-decoration: none !important;
       transition: all 0.2s;
@@ -318,17 +332,31 @@
       background: #E8632A;
       transform: translateY(-1px);
     }
-    .author-qr img {
-      width: 110px;
-      height: 110px;
-      border-radius: 8px;
-      border: 2px solid #f0d5c8;
-      display: block;
-      margin: 0 auto 0.4em;
-    }
     .qr-tip {
-      font-size: 0.72em;
+      font-size: 0.78em;
       color: #999;
+    }
+    /* 侧边栏底部作者卡片 */
+    .sidebar .author-card {
+      flex-direction: column;
+      text-align: center;
+      padding: 12px;
+      margin: 12px 8px 8px;
+      gap: 8px;
+    }
+    .sidebar .author-qr-img {
+      width: 90px;
+      height: 90px;
+      margin: 0 auto;
+    }
+    .sidebar .author-info {
+      text-align: center;
+    }
+    .sidebar .author-name {
+      font-size: 0.95em;
+    }
+    .sidebar .author-desc {
+      font-size: 0.72em;
     }
 
     /* ============================================================
@@ -358,6 +386,11 @@
       subMaxLevel: 2,
       auto2top: true,
       relativePath: false,
+      noEmoji: false,
+      // 开启 HTML 渲染（允许 Markdown 中内嵌 HTML）
+      markdown: {
+        smartypants: true,
+      },
       search: {
         maxAge: 86400000,
         paths: 'auto',
@@ -402,6 +435,30 @@
     mermaid.initialize({ startOnLoad: false, theme: 'default' });
     // 追加 Mermaid 插件，不覆盖已有插件（如 docsify-pagination）
     window.$docsify.plugins = (window.$docsify.plugins || []).concat([
+      // 在首页注入作者卡片
+      function(hook, vm) {
+        hook.afterEach(function(html, next) {
+          // 如果是首页（README.md），在标题后插入作者卡片
+          if (vm.route.path === '/' || vm.route.path === '') {
+            var authorCard = `
+              <div class="author-card">
+                <img class="author-qr-img" src="https://d2xsxph8kpxj0f.cloudfront.net/310519663498638152/movh5AgAvgbrggiNBCwBz2/xiaohongshu-qr_39098fef.jpg" alt="小红书二维码" />
+                <div class="author-info">
+                  <div class="author-name">李叔聊AI</div>
+                  <div class="author-desc">🚀 YC校友（OpenAI系）· 全栈开发 × 10年AI经验</div>
+                  <div class="author-links">
+                    <a href="https://github.com/OpenDemon/claude-code-school" target="_blank" class="author-link github-link">⭐ GitHub 开源</a>
+                  </div>
+                  <div class="qr-tip">← 扫码小红书关注我</div>
+                </div>
+              </div>
+            `;
+            // 在首个 h2 标题前插入作者卡片
+            html = html.replace(/(<h2[^>]*>)/, authorCard + '$1');
+          }
+          next(html);
+        });
+      },
       function(hook) {
         hook.doneEach(function() {
           document.querySelectorAll('.mermaid').forEach(function(el) {
