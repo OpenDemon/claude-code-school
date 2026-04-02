@@ -4,7 +4,7 @@
 
 ---
 
-## 先用大白话理解
+## 10.1 先用大白话理解
 
 Claude Code 有个根本性的限制：**每次新开一个会话，它就「失忆」了**。之前教过它的规则、讨论过的决策、约定好的风格——全部清零。
 
@@ -12,7 +12,7 @@ CLAUDE.md 就是解决这个问题的方案。它是一个纯文本文件，Clau
 
 ---
 
-## 四种记忆类型
+## 10.2 四种记忆类型
 
 | 类型 | 存储位置 | 生命周期 | 说明 |
 |------|---------|---------|------|
@@ -23,7 +23,7 @@ CLAUDE.md 就是解决这个问题的方案。它是一个纯文本文件，Clau
 
 ---
 
-## CLAUDE.md 的加载优先级
+## 10.3 CLAUDE.md 的加载优先级
 
 ```
 ~/.claude/CLAUDE.md          ← 全局规则（对所有项目生效）
@@ -37,7 +37,7 @@ CLAUDE.md 就是解决这个问题的方案。它是一个纯文本文件，Clau
 
 ---
 
-## 什么应该写进 CLAUDE.md？
+## 10.4 什么应该写进 CLAUDE.md？
 
 **写这些：**
 
@@ -82,7 +82,19 @@ CLAUDE.md 就是解决这个问题的方案。它是一个纯文本文件，Clau
 
 ---
 
-## AI 的自动洞察机制
+## 10.5 CLAUDE.md 的加载机制
+
+CLAUDE.md 在技术上是如何加载的？它不是简单地把文件内容拼接到系统提示词前面。
+
+**加载时机**：Claude Code 在每次会话开始时加载 CLAUDE.md，而不是每次工具调用时。这意味着 CLAUDE.md 的内容会被加入到第一条消息之前的系统提示词中。
+
+**Prompt Cache 优化**：CLAUDE.md 的内容会被标记为可缓存（`cache_control: ephemeral`）。这意味着在同一个会话中，CLAUDE.md 的 Token 只需计算一次，后续每次调用 API 都会命中缓存。这对于内容较多的 CLAUDE.md 来说，可以显著降低成本。
+
+**内容大小建议**：虽然没有硬性限制，但建议将 CLAUDE.md 控制在 2,000 Token 以内。过长的 CLAUDE.md 会占用寝贵的上下文窗口，可能导致其他重要信息被压缩或截断。
+
+---
+
+## 10.6 AI 的自动洞察机制
 
 Claude Code 源码 `insights.ts` 里有一个主动学习机制：**定期分析用户的历史会话，找出「你在重复告诉 Claude 同一件事」的模式**。
 
@@ -92,7 +104,7 @@ Claude Code 源码 `insights.ts` 里有一个主动学习机制：**定期分析
 
 ---
 
-## 团队 CLAUDE.md 模板
+## 10.7 团队 CLAUDE.md 模板
 
 ```markdown
 # [项目名] Claude Code 配置
@@ -115,6 +127,24 @@ Claude Code 源码 `insights.ts` 里有一个主动学习机制：**定期分析
 ## 常用命令
 [项目特有的命令，比如 `npm run dev:mock` 启动 mock 模式]
 ```
+
+---
+
+## 10.8 memdir：AI 的主动记忆
+
+除了 CLAUDE.md，Claude Code 还有一个更动态的记忆系统：**memdir**。
+
+`memdir/` 是一个目录，AI 可以在这里主动写入笔记文件。与 CLAUDE.md 不同，memdir 的内容是 AI 自己生成和管理的，而不是用户写的。
+
+```
+~/.claude/memdir/
+├── user-preferences.md      ← AI 学到的用户偏好
+├── project-insights.md      ← 对当前项目的洞察
+├── common-patterns.md       ← 观察到的代码模式
+└── lessons-learned.md       ← 历史错误和教训
+```
+
+**语义召回**：memdir 不是每次全量加载，而是根据当前任务的相关性进行语义搜索，只加载最相关的片段。这解决了记忆内容过多时占用上下文窗口的问题。
 
 ---
 
