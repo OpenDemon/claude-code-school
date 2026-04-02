@@ -20,6 +20,8 @@
   - [13. 代码编辑策略](docs/13-code-editing-strategy.md)
   - [14. Hooks 与可扩展性](docs/14-hooks-extensibility.md)
   - [15. 技能系统](docs/15-skills-system.md)
+  - [16. 最小必要组件](docs/16-minimal-components.md)
+  - [17. 用户体验与终端渲染](docs/17-user-experience.md)
 
 - **进阶与彩蛋**
   - [9. 10 种运行模式](docs/09-running-modes.md)

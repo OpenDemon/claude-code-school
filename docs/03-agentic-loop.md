@@ -295,3 +295,104 @@ for (const toolCall of writeTools) {
 ---
 
 > 下一章：[对话引擎深度解析 →](#/docs/04-query-engine)
+
+---
+
+## 3.12 七个继续点（Continue Sites）
+
+`query()` 循环有 7 个导致循环继续的位置，每个对应一种恢复策略：
+
+| 继续原因 | 触发条件 | 处理方式 |
+|---------|---------|---------|
+| `next_turn` | 模型调用了工具 | 正常继续，带上工具结果 |
+| `collapse_drain_retry` | PTL 错误 + Context Collapse 有暂存 | 提交折叠，释放 Token，重试 |
+| `reactive_compact_retry` | PTL 错误 + Collapse 不够 | 强制全量摘要压缩，重试 |
+| `max_output_tokens_escalate` | 输出 Token 不够 | 升级到 64K Token 限制 |
+| `max_output_tokens_recovery` | 升级不可用/已用 | 注入续写提示，最多重试 3 次 |
+| `stop_hook_blocking` | Stop Hook 阻止终止 | 继续执行 |
+| `token_budget_continuation` | Token 预算续写 | 继续生成 |
+
+---
+
+## 3.13 PTL（Prompt-Too-Long）恢复流程
+
+当上下文超出模型限制时，系统会按两个阶段尝试恢复：
+
+```mermaid
+flowchart TD
+    PTL[PTL 错误发生] --> Phase1["Phase 1: Context Collapse 排水\nrecoverFromOverflow\n提交暂存的折叠"]
+    Phase1 --> Check1{释放了 Token?}
+    Check1 -->|是| Retry1["重试 API 调用\ntransition=collapse_drain_retry"]
+    Check1 -->|否| Phase2["Phase 2: 反应式压缩\ntryReactiveCompact\n强制全量摘要压缩"]
+    Phase2 --> Check2{压缩成功?}
+    Check2 -->|是| Retry2["重试 API 调用\ntransition=reactive_compact_retry"]
+    Check2 -->|否| Fail["yield 错误\n返回 prompt_too_long"]
+```
+
+**Phase 1 优先**：Context Collapse 是轻量级操作（只是折叠已有内容），代价远低于全量压缩。只有 Collapse 不够用时，才升级到 Phase 2。
+
+**Phase 2 的代价**：全量摘要压缩需要一次完整的 API 调用（约 20K output tokens），耗时 5-30 秒。这就是为什么 Phase 1 要先尝试——能省则省。
+
+---
+
+## 3.14 错误扣留策略（Error Withholding）
+
+这是 Claude Code 最巧妙的设计之一：**可恢复的错误不立即 yield 给上层**。
+
+### 工作原理
+
+当出现 `prompt_too_long` 或 `max_output_tokens` 错误时，`query()` 不会立即通知调用方。它将错误推入 `assistantMessages` 但保留引用，然后运行恢复检查。如果恢复成功，错误**永远不会暴露给调用者**——用户完全感知不到中间的错误。
+
+### 一个实际场景
+
+假设模型正在编辑一个大文件，生成了 16,000 Token 的输出后被 `max_output_tokens` 截断：
+
+1. **错误发生**：API 返回 `stop_reason: 'max_output_tokens'`
+2. **扣留而非暴露**：错误被包装为 `AssistantMessage`（带 `apiError: 'max_output_tokens'`），推入消息列表但**不 yield** 给调用方
+3. **恢复策略 1 — 升级**：检查是否可以升级到 `ESCALATED_MAX_TOKENS`（64K）。如果可以，直接用更大的 Token 限制重试，不注入任何用户消息
+4. **恢复策略 2 — 续写**：如果升级不可用或已经用过，注入一条 meta 用户消息 `"Output token limit hit. Resume directly from where you left off..."` 让模型从断点继续，最多重试 3 次
+5. **成功恢复**：如果恢复成功，那条被扣留的错误消息永远不会 yield——用户感知到的是一次流畅的响应
+
+只有当所有恢复尝试都失败时，错误才会被 yield 给上层。
+
+### 为什么这么设计？
+
+如果不做扣留，SDK 消费者（桌面应用、Bridge 模式）收到 `error` 类型的消息后会终止会话——即使后端的恢复循环还在运行，前端已经不再监听了。扣留机制确保前端只看到「干净」的结果流。
+
+---
+
+## 3.15 Token 使用追踪
+
+QueryEngine 维护完整的 Token 使用统计：
+
+```typescript
+totalUsage: {
+  input_tokens: 0,
+  output_tokens: 0,
+  cache_read_input_tokens: 0,
+  cache_creation_input_tokens: 0,
+  server_tool_use_input_tokens: 0,
+}
+```
+
+追踪机制：
+- 每条 API 响应的 `message_delta` 事件中，`currentMessageUsage` 被更新
+- `message_stop` 时，`currentMessageUsage` 通过 `accumulateUsage()` 累加到 `totalUsage`
+- `getTotalCost()` 基于 `totalUsage` 和模型定价计算 USD 总成本
+- 一旦 `getTotalCost() > maxBudgetUsd`，整个查询终止——这是防止意外高成本的安全机制
+
+`cache_read_input_tokens` 和 `cache_creation_input_tokens` 的追踪对提示词缓存策略至关重要——它们告诉系统缓存是否在有效工作。缓存断裂检测就依赖这些数据来判断是否发生了缓存失效。
+
+---
+
+## 3.16 设计亮点总结（扩展）
+
+**异步生成器的优势**：`query()` 是一个 `async function*`，通过 `yield` 逐步输出事件。相比回调模式（如 EventEmitter），生成器有两个关键优势：（1）**背压控制**——消费端不处理完上一个事件，生产端不会继续执行，天然防止事件堆积；（2）**线性控制流**——循环的 7 个 continue site 可以用普通的 `state = { ... }; continue` 表达，不需要状态机的显式转换表。
+
+**错误扣留的哲学**：「用户不应该看到系统内部的恢复过程」。这个设计原则在很多高质量系统中都有体现——用户看到的是最终结果，而不是系统为达到这个结果所做的所有尝试和失败。
+
+**熔断器的数据驱动**：3 次连续失败的阈值来自真实生产数据（1,279 个会话连续失败超过 50 次）。这提醒我们：工程系统的参数应该来自真实数据，而不是直觉或「感觉合理」的数字。
+
+---
+
+> 下一章：[对话引擎深度解析 →](#/docs/04-query-engine)

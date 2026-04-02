@@ -373,3 +373,264 @@ export const FORK_AGENT = {
 ---
 
 > 下一章：[MCP 集成与扩展 →](#/docs/08-mcp-integration)
+
+---
+
+## 7.13 协调器提示词设计精要
+
+`getCoordinatorSystemPrompt()` 中蕴含了多条经过实践验证的设计原则：
+
+### 原则 1：「Never write 'based on your findings'」
+
+协调器必须自己理解研究结果，然后写出包含具体文件路径、行号和修改内容的实施指令。「Based on your findings」是将理解能力委托给 Worker，违背了协调器的核心职责。
+
+```
+// 反模式 — 懒惰委托
+Agent({ prompt: "Based on your findings, fix the auth bug" })
+
+// 正确 — 综合后的具体指令
+Agent({ prompt: "Fix the null pointer in src/auth/validate.ts:42.
+  The user field on Session is undefined when sessions expire but
+  the token remains cached. Add a null check before user.id access." })
+```
+
+### 原则 2：「Every message you send is to the user」
+
+这条规则防止协调器在长时间运行时保持沉默。Worker 的 `<task-notification>` 是内部信号，不是对话伙伴——协调器不应该回复通知，而应该向用户报告进展。
+
+### 原则 3：「Don't set the model parameter」
+
+协调器提示词中明确要求不要为 Worker 设置 `model` 参数。原因是 Worker 默认使用与协调器相同的模型来处理实质性任务。如果协调器为了「节省成本」设置了更便宜的模型，Worker 在复杂实施任务中可能表现不佳。
+
+### 原则 4：「Add a purpose statement」
+
+协调器被要求在 Worker prompt 中包含「目的声明」——例如「This research will inform a PR description」。Worker 知道产出的用途后，会调整输出的深度和格式。为 PR 描述做的研究会更注重用户可见的变化，为 bug 修复做的研究会更注重根因分析。
+
+### 原则 5：Continue vs Spawn 决策表
+
+| 场景 | 决策 | 原因 |
+|------|------|------|
+| 研究探索了需要编辑的文件 | **Continue** | Worker 已有文件上下文 |
+| 研究范围广但实施范围窄 | **Spawn** | 避免探索噪声，聚焦上下文更干净 |
+| 纠正失败或扩展最近工作 | **Continue** | Worker 有错误上下文 |
+| 验证其他 Worker 刚写的代码 | **Spawn** | 验证者应以新鲜视角审视 |
+| 上次实施方法完全错误 | **Spawn** | 错误上下文会锚定重试思路 |
+
+最后一条特别有深意：当一个 Worker 的方法完全错误时，它的对话历史中充满了错误的假设和失败的尝试。如果继续使用这个 Worker，模型倾向于基于已有上下文做小修小补（「锚定效应」），而不是从根本上换一种方法。Spawn 一个全新的 Worker 可以避免这种认知锚定。
+
+### 原则 6：「验证 = 证明代码有效，不是确认代码存在」
+
+验证 Worker 必须：运行测试（启用功能）、调查类型检查错误（不轻易判定「无关」）、保持怀疑态度、独立测试。
+
+### 原则 7：「Worker 看不到你的对话」
+
+每个 Worker 提示词必须是自包含的。这是初学者最容易犯的错误——写出类似「请继续刚才的工作」的 prompt，但 Worker 根本不知道「刚才」是什么。
+
+---
+
+## 7.14 Swarm 执行后端
+
+Swarm 系统支持创建**命名 Agent 团队**，Agent 之间通过信箱对等通信。
+
+### 三种后端
+
+| 后端 | 实现方式 | 特点 |
+|------|---------|------|
+| **Tmux** | 创建/管理 tmux 分屏面板 | 支持隐藏/显示，最常用 |
+| **iTerm2** | 原生 iTerm2 面板（via `it2` CLI） | macOS 原生体验 |
+| **InProcess** | 同一 Node.js 进程内运行 | AsyncLocalStorage 隔离，共享 API 客户端和 MCP 连接 |
+
+后端检测的优先级：
+
+```mermaid
+flowchart TD
+    Detect[后端检测] --> InTmux{在 tmux 内?}
+    InTmux -->|是| Tmux[Tmux 后端]
+    InTmux -->|否| InITerm{在 iTerm2 内?}
+    InITerm -->|是| HasIt2{it2 CLI 可用?}
+    HasIt2 -->|是| ITerm[iTerm2 后端]
+    HasIt2 -->|否| HasTmux1{tmux 可用?}
+    HasTmux1 -->|是| Tmux
+    HasTmux1 -->|否| Error1[错误 + 安装指引]
+    InITerm -->|否| NonInteractive{非交互式?}
+    NonInteractive -->|是| InProcess[InProcess 后端]
+    NonInteractive -->|否| HasTmux2{tmux 可用?}
+    HasTmux2 -->|是| Tmux
+    HasTmux2 -->|否| Error2[错误]
+```
+
+### InProcess 后端：AsyncLocalStorage 上下文隔离
+
+InProcess 后端是最轻量的执行方式，适用于非交互式环境（如 CI/CD）。每个 Worker 通过 `runWithTeammateContext()` 在独立的 AsyncLocalStorage 上下文中运行：
+
+```mermaid
+flowchart TD
+    Leader[Leader Agent<br/>主进程上下文] --> ALS["AsyncLocalStorage<br/>上下文隔离层"]
+    ALS --> W1["Worker 1<br/>独立 TeammateIdentity<br/>独立 AbortController"]
+    ALS --> W2["Worker 2<br/>独立 TeammateIdentity<br/>独立 AbortController"]
+    Leader -.->|共享| API[API 客户端]
+    W1 -.->|共享| API
+    W2 -.->|共享| API
+    Leader -.->|共享| MCP[MCP 连接]
+    W1 -.->|共享| MCP
+    W2 -.->|共享| MCP
+```
+
+为什么 API 客户端和 MCP 连接可以共享？因为它们本质上是无状态的连接复用——HTTP 客户端和 WebSocket 连接是线程安全的，多个 Worker 可以并发使用同一个连接而不会干扰。这避免了为每个 Worker 建立独立连接的开销（TCP 握手、TLS 协商、MCP 初始化等）。
+
+### 统一接口
+
+所有后端实现统一的 `TeammateExecutor` 接口：
+
+```typescript
+interface TeammateExecutor {
+  spawn(config): Promise<void>              // 创建队友
+  sendMessage(agentId, message): Promise<void>  // 发送消息
+  terminate(agentId, reason): Promise<void> // 优雅关闭
+  kill(agentId): Promise<void>              // 立即终止
+  isActive(agentId): boolean                // 检查存活
+}
+```
+
+`terminate` 和 `kill` 的区别很重要：`terminate` 发送优雅关闭请求（Agent 可以完成当前工作再退出），`kill` 通过 AbortController 立即中断。协调器在 Worker 方向错误时使用 `kill`，在正常结束时使用 `terminate`。
+
+---
+
+## 7.15 四阶段并发管理
+
+大规模重构任务通常分四个阶段，每个阶段有不同的并发策略：
+
+| 阶段 | 并发策略 | 原因 |
+|------|---------|------|
+| 研究 | 自由并行 | 只读操作，无冲突风险 |
+| 综合 | 协调器串行 | 必须理解所有发现后才能下发指令 |
+| 实施 | 按文件集串行 | 同文件写入必须串行化，防止冲突 |
+| 验证 | 可与不同文件区域的实施并行 | 验证不修改被测代码 |
+
+---
+
+## 7.16 设计洞察（深度扩展）
+
+**「锚定效应」与 Spawn 决策**：当一个 Worker 的方法完全错误时，它的对话历史中充满了错误的假设和失败的尝试。如果继续使用这个 Worker，模型倾向于基于已有上下文做小修小补，而不是从根本上换一种方法。这是认知科学中「锚定效应」在 AI 系统中的体现——初始信息会不成比例地影响后续判断。Spawn 一个全新的 Worker 可以避免这种认知锚定。
+
+**「InProcess 共享连接」的工程经济学**：为每个 Worker 建立独立的 API 连接和 MCP 连接，会产生大量的初始化开销（TCP 握手、TLS 协商、MCP 初始化等）。在 10 个 Worker 并行运行的场景下，这个开销可能是几秒钟。共享连接将这个开销降到接近零，同时通过 AsyncLocalStorage 保持了上下文隔离。这是「共享状态 + 上下文隔离」的优雅结合。
+
+**「目的声明」的提示工程价值**：在 Worker prompt 中包含「目的声明」，是一种微妙但有效的提示工程技巧。它利用了语言模型的「角色感知」能力——模型在生成输出时会考虑「这个输出的受众是谁、用途是什么」，从而调整输出的深度、格式和重点。这是「上下文感知生成」在多 Agent 系统中的应用。
+
+---
+
+> 下一章：[MCP 集成与扩展 →](#/docs/08-mcp-integration)
+
+---
+
+## 7.17 协调器提示词设计精要
+
+`getCoordinatorSystemPrompt()` 中蕴含了多条经过实践验证的设计原则：
+
+### 原则 1：「Never write 'based on your findings'」
+
+协调器必须自己理解研究结果，然后写出包含具体文件路径、行号和修改内容的实施指令。「Based on your findings」是将理解能力委托给 Worker，违背了协调器的核心职责。
+
+```
+// 反模式 — 懒惰委托
+Agent({ prompt: "Based on your findings, fix the auth bug" })
+
+// 正确 — 综合后的具体指令
+Agent({ prompt: "Fix the null pointer in src/auth/validate.ts:42.
+  The user field on Session is undefined when sessions expire but
+  the token remains cached. Add a null check before user.id access." })
+```
+
+这条规则定义了协调器的**不可委托职责**——综合理解。如果协调器只是转发消息，它就退化成了一个消息路由器，没有任何智能编排的价值。
+
+### 原则 2：「Every message you send is to the user」
+
+这条规则防止协调器在长时间运行时保持沉默。Worker 的 `<task-notification>` 是内部信号，不是对话伙伴——协调器不应该回复通知，而应该向用户报告进展。
+
+### 原则 3：「Don't set the model parameter」
+
+协调器提示词中明确要求不要为 Worker 设置 `model` 参数。原因是 Worker 默认使用与协调器相同的模型来处理实质性任务。如果协调器为了「节省成本」设置了更便宜的模型，Worker 在复杂实施任务中可能表现不佳。
+
+### 原则 4：「Add a purpose statement」
+
+协调器被要求在 Worker prompt 中包含「目的声明」——例如「This research will inform a PR description」。Worker 知道产出的用途后，会调整输出的深度和格式。为 PR 描述做的研究会更注重用户可见的变化，为 bug 修复做的研究会更注重根因分析。
+
+### 原则 5：Continue vs Spawn 决策表
+
+| 场景 | 决策 | 原因 |
+|------|------|------|
+| 研究探索了需要编辑的文件 | **Continue** | Worker 已有文件上下文 |
+| 研究范围广但实施范围窄 | **Spawn** | 避免探索噪声，聚焦上下文更干净 |
+| 纠正失败或扩展最近工作 | **Continue** | Worker 有错误上下文 |
+| 验证其他 Worker 刚写的代码 | **Spawn** | 验证者应以新鲜视角审视 |
+| 上次实施方法完全错误 | **Spawn** | 错误上下文会锚定重试思路 |
+
+最后一条特别有深意：当一个 Worker 的方法完全错误时，它的对话历史中充满了错误的假设和失败的尝试。Spawn 一个全新的 Worker 可以避免「锚定效应」——模型倾向于基于已有上下文做小修小补，而不是从根本上换一种方法。
+
+### 原则 6：「验证 = 证明代码有效，不是确认代码存在」
+
+验证 Worker 必须：运行测试（启用功能）、调查类型检查错误（不轻易判定「无关」）、保持怀疑态度、独立测试。
+
+### 原则 7：「Worker 看不到你的对话」
+
+每个 Worker 提示词必须是自包含的。这是初学者最容易犯的错误——写出类似「请继续刚才的工作」的 prompt，但 Worker 根本不知道「刚才」是什么。
+
+---
+
+## 7.18 InProcess 后端的权限同步机制
+
+Worker 执行工具时需要权限审批。InProcess 后端使用两种权限桥接方式：
+
+**1. 权限转发（Permission Forwarding）**：
+Worker 的权限请求通过 `<task-notification>` 信道发送给协调器，协调器将其转发给用户界面。用户在主界面批准后，批准结果通过信箱系统传回 Worker。
+
+**2. 权限继承（Permission Inheritance）**：
+协调器可以在 `spawn()` 时传递 `inheritedPermissions` 列表——这些权限不需要用户再次确认，Worker 可以直接使用。这用于「协调器已经获得用户授权的操作」，避免重复询问。
+
+```typescript
+// 协调器 spawn Worker 时传递继承权限
+await executor.spawn({
+  agentId: 'worker-1',
+  prompt: '...',
+  inheritedPermissions: [
+    { type: 'bash', pattern: 'npm test' },
+    { type: 'file_write', pattern: 'src/**' },
+  ]
+})
+```
+
+**为什么需要权限继承？** 考虑这个场景：协调器已经获得了「允许运行 npm test」的权限。如果每个 Worker 都需要独立请求这个权限，用户会看到 10 个相同的权限弹窗——这是「权限疲劳」的典型场景。权限继承让协调器可以将已获得的权限传递给 Worker，减少重复确认。
+
+---
+
+## 7.19 任务通知系统
+
+Worker 通过 `<task-notification>` 标签向协调器发送结构化通知，而不是通过对话消息。这种设计的好处是：通知和对话内容在语义上是分离的，协调器可以精确地处理通知而不影响对话流。
+
+```xml
+<task-notification>
+  <type>progress</type>
+  <agent-id>worker-1</agent-id>
+  <content>Analyzed 47 files, found 12 potential issues</content>
+</task-notification>
+```
+
+通知类型：
+- `progress`：进度更新（不需要协调器回复）
+- `permission-request`：权限请求（需要协调器转发给用户）
+- `task-complete`：任务完成（协调器可以发送下一个任务或终止 Worker）
+- `task-failed`：任务失败（协调器决定是否重试或 Spawn 新 Worker）
+
+---
+
+## 7.20 设计洞察（深度扩展）
+
+**「协调器的不可委托职责」**：协调器提示词中最重要的原则是「综合理解不可委托」。这体现了多 Agent 系统设计的核心思想：**每个 Agent 都有自己的不可委托职责**。Worker 的不可委托职责是「执行具体任务」，协调器的不可委托职责是「综合理解并制定具体指令」。如果这些职责被委托出去，整个系统就失去了分工的意义。
+
+**「权限继承」的信任传递模型**：权限继承实现了一种「信任传递」机制——用户信任协调器，协调器信任 Worker，因此用户间接信任 Worker 执行特定操作。这是一种「委托信任」模型，与 OAuth 的「授权委托」类似。关键约束是：Worker 只能继承协调器已获得的权限，不能升级权限级别——这保证了信任链不会被滥用。
+
+**「任务通知 vs 对话消息」的语义分离**：`<task-notification>` 标签实现了「控制平面」和「数据平面」的分离。对话消息是数据平面（实际的工作内容），任务通知是控制平面（系统状态和协调信号）。这种分离使得协调器可以在不干扰对话流的情况下管理 Worker 的生命周期。
+
+---
+
+> 下一章：[MCP 集成与扩展 →](#/docs/08-mcp-integration)

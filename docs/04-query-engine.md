@@ -312,3 +312,142 @@ class QueryEngine {
 ---
 
 > 下一章：[上下文工程与压缩 →](#/docs/05-context-compression)
+
+---
+
+## 4.11 双层生成器架构
+
+Claude Code 的查询系统采用双层生成器架构：
+
+```
+QueryEngine（外层）
+  └── query()（内层）
+```
+
+**QueryEngine**（`src/queryEngine.ts`）是会话级的管理器：
+- 维护完整的对话历史（`messages`）
+- 管理会话级状态（Token 使用统计、成本追踪、压缩历史）
+- 提供 `processUserTurn()` 接口给上层（REPL、Bridge 模式）
+- 处理会话恢复和 Worktree 管理
+
+**`query()`**（`src/query.ts`）是单次循环的执行引擎：
+- 是一个 `async function*`，通过 `yield` 逐步输出事件
+- 管理 API 调用、工具执行、错误恢复
+- 包含 7 个精确的继续点（Continue Sites）
+
+这种分层的好处是：**关注点分离**。QueryEngine 不需要知道单次循环的细节（如何处理 PTL 错误、如何并行执行工具），query() 不需要知道会话级的状态（历史消息如何存储、成本如何计算）。
+
+---
+
+## 4.12 七个继续点（Continue Sites）
+
+`query()` 循环有 7 个导致循环继续的位置，每个对应一种恢复策略：
+
+| 继续原因 | 触发条件 | 处理方式 |
+|---------|---------|---------|
+| `next_turn` | 模型调用了工具 | 正常继续，带上工具结果 |
+| `collapse_drain_retry` | PTL 错误 + Context Collapse 有暂存 | 提交折叠，释放 Token，重试 |
+| `reactive_compact_retry` | PTL 错误 + Collapse 不够 | 强制全量摘要压缩，重试 |
+| `max_output_tokens_escalate` | 输出 Token 不够 | 升级到 64K Token 限制 |
+| `max_output_tokens_recovery` | 升级不可用/已用 | 注入续写提示，最多重试 3 次 |
+| `stop_hook_blocking` | Stop Hook 阻止终止 | 继续执行 |
+| `token_budget_continuation` | Token 预算续写 | 继续生成 |
+
+### PTL（Prompt-Too-Long）恢复流程
+
+```mermaid
+flowchart TD
+    PTL[PTL 错误发生] --> Phase1[Phase 1: Context Collapse 排水<br/>提交暂存的折叠]
+    Phase1 --> Check1{释放了Token?}
+    Check1 -->|是| Retry1[重试 API 调用<br/>transition=collapse_drain_retry]
+    Check1 -->|否| Phase2[Phase 2: 反应式压缩<br/>强制全量摘要压缩]
+    Phase2 --> Check2{压缩成功?}
+    Check2 -->|是| Retry2[重试 API 调用<br/>transition=reactive_compact_retry]
+    Check2 -->|否| Fail[yield 错误<br/>返回 prompt_too_long]
+```
+
+---
+
+## 4.13 错误扣留策略（Withholding）
+
+这是 Claude Code 最巧妙的设计之一：**可恢复的错误不立即 yield 给上层**。
+
+### 工作原理
+
+当出现 `prompt_too_long` 或 `max_output_tokens` 错误时，query() 不会立即通知调用方。它将错误推入 `assistantMessages` 但保留引用，然后运行恢复检查。如果恢复成功，错误**永远不会暴露给调用者**——用户完全感知不到中间的错误。
+
+```typescript
+// 错误扣留检测函数
+function isWithheldMaxOutputTokens(
+  msg: Message | StreamEvent | undefined,
+): msg is AssistantMessage {
+  return msg?.type === 'assistant' && msg.apiError === 'max_output_tokens'
+}
+```
+
+### 一个实际场景
+
+假设模型正在编辑一个大文件，生成了 16,000 Token 的输出后被 `max_output_tokens` 截断：
+
+1. **错误发生**：API 返回 `stop_reason: 'max_output_tokens'`
+2. **扣留而非暴露**：错误被包装为 `AssistantMessage`，推入消息列表但**不 yield** 给调用方
+3. **恢复策略 1 — 升级**：检查是否可以升级到 `ESCALATED_MAX_TOKENS`（64K）。如果可以，直接用更大的 Token 限制重试
+4. **恢复策略 2 — 续写**：如果升级不可用，注入一条 meta 用户消息 `"Output token limit hit. Resume directly from where you left off..."` 让模型从断点继续，最多重试 3 次
+5. **成功恢复**：如果恢复成功，那条被扣留的错误消息永远不会 yield——用户感知到的是一次流畅的响应
+
+只有当所有恢复尝试都失败时，错误才会被 yield 给上层。
+
+---
+
+## 4.14 Token 使用追踪
+
+QueryEngine 维护完整的 Token 使用统计：
+
+```typescript
+totalUsage: {
+  input_tokens: 0,
+  output_tokens: 0,
+  cache_read_input_tokens: 0,
+  cache_creation_input_tokens: 0,
+  server_tool_use_input_tokens: 0,
+}
+```
+
+追踪机制：
+- 每条 API 响应的 `message_delta` 事件中，`currentMessageUsage` 被更新
+- `message_stop` 时，`currentMessageUsage` 通过 `accumulateUsage()` 累加到 `totalUsage`
+- `getTotalCost()` 基于 `totalUsage` 和模型定价计算 USD 总成本
+- 一旦 `getTotalCost() > maxBudgetUsd`，整个查询终止——这是防止意外高成本的安全机制
+
+`cache_read_input_tokens` 和 `cache_creation_input_tokens` 的追踪对提示词缓存策略至关重要——它们告诉系统缓存是否在有效工作。缓存断裂检测就依赖这些数据来判断是否发生了缓存失效。
+
+---
+
+## 4.15 停止条件
+
+循环在以下条件下终止：
+
+1. **模型未调用工具**：返回纯文本响应，正常结束
+2. **达到最大轮次**：`maxTurns` 限制
+3. **USD 预算超限**：`getTotalCost() > maxBudgetUsd`
+4. **用户中断**：`abortController.signal` 被触发
+5. **不可恢复的错误**：PTL/MOT 恢复全部失败
+6. **连续压缩失败**：3 次 autocompact 连续失败（熔断器）
+
+> **为什么熔断阈值是 3 次？**
+>
+> `MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES = 3`。源码注释引用了生产数据：*"1,279 sessions had 50+ consecutive failures (up to 3,272) in a single session, wasting ~250K API calls/day globally."* 没有这个熔断器之前，压缩一旦进入失败循环，会无限重试。3 次阈值在「给压缩服务恢复机会」和「避免资源浪费」之间取得平衡。
+
+---
+
+## 4.16 设计洞察（深度扩展）
+
+**「异步生成器 vs 回调/事件」的架构选择**：`query()` 是一个 `async function*`，通过 `yield` 逐步输出事件。相比回调模式（如 EventEmitter），生成器有两个关键优势：（1）**背压控制**——消费端不处理完上一个事件，生产端不会继续执行，天然防止事件堆积；（2）**线性控制流**——循环的 7 个 continue site 可以用普通的 `state = { ... }; continue` 表达，不需要状态机的显式转换表。
+
+**「错误扣留」的用户体验设计**：错误扣留不是「隐藏错误」，而是「在用户不需要知道的情况下自动修复错误」。这体现了「用户体验优先」的设计理念——用户关心的是任务是否完成，而不是系统内部发生了什么错误。只有当错误无法自动修复时，才需要告知用户。
+
+**「Token 预算」的安全机制**：`maxBudgetUsd` 限制是一个「防止意外高成本」的安全机制。在 AI 系统中，一个失控的循环可能在几分钟内消耗数百美元的 API 费用。Token 预算机制确保即使系统进入异常状态，成本也有上限。这是「防御性设计」的体现。
+
+---
+
+> 下一章：[上下文工程与压缩 →](#/docs/05-context-compression)

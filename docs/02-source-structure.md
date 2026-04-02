@@ -282,3 +282,295 @@ graph LR
 ---
 
 > 下一章：[代理循环：AI 的心跳 →](#/docs/03-agentic-loop)
+
+---
+
+## 2.8 关键文件深度分析
+
+### query.ts（1,728 行）——核心循环
+
+`query.ts` 是整个系统的心脏。它是一个 `async function*`（异步生成器），实现了 Agent 的核心循环：
+
+```typescript
+// query.ts 的核心结构（简化版）
+export async function* query(
+  messages: Message[],
+  tools: Tool[],
+  options: QueryOptions,
+): AsyncGenerator<StreamEvent> {
+  let state: LoopState = initState(options);
+  
+  while (true) {
+    // 1. 检查是否需要压缩
+    if (shouldCompact(state)) {
+      yield* compact(state);
+    }
+    
+    // 2. 调用 API
+    const stream = queryModelWithStreaming(state.messages, tools, options);
+    
+    // 3. 处理流式响应
+    for await (const event of stream) {
+      yield event;  // 实时传递给 UI
+      
+      if (event.type === 'tool_use') {
+        // 4. 执行工具（流式预执行）
+        const result = await executeTool(event.tool, event.input);
+        state.messages.push(toolResultMessage(result));
+      }
+    }
+    
+    // 5. 判断是否继续
+    if (!hasToolUse(state.lastResponse)) {
+      return;  // 没有工具调用，循环结束
+    }
+    
+    state.turns++;
+    if (state.turns >= options.maxTurns) return;
+  }
+}
+```
+
+`query.ts` 中最复杂的部分是 7 个「继续点」（Continue Sites）的处理——每种错误恢复策略对应一个继续点。
+
+### claude.ts（3,419 行）——系统提示词
+
+`claude.ts` 是 Claude Code 的「大脑配置文件」。它包含：
+
+- **系统提示词构建**：`getSystemPrompt()` 函数，将数十个模块化的提示词片段组装成完整的系统提示词
+- **工具定义**：所有内置工具的 JSON Schema 定义
+- **行为指令**：告诉模型如何使用工具、如何处理错误、如何与用户交互
+
+`claude.ts` 的结构是高度模块化的：
+
+```typescript
+// claude.ts 的提示词构建（简化版）
+export function getSystemPrompt(context: SystemContext): string {
+  return [
+    getCoreInstructions(),           // 核心行为指令
+    getToolUsageInstructions(),      // 工具使用指令
+    getCodeEditingInstructions(),    // 代码编辑指令
+    getSecurityInstructions(),       // 安全限制
+    getMemoryInstructions(context),  // 记忆系统指令
+    getSkillsInstructions(context),  // 技能系统指令
+    getProjectContext(context),      // 项目上下文（CLAUDE.md 内容）
+    getEnvironmentInfo(context),     // 环境信息（OS、shell、git 状态）
+  ].filter(Boolean).join('\n\n');
+}
+```
+
+每个子函数都是独立的，可以单独测试和修改。这种模块化设计让提示词工程变得可维护。
+
+### compact.ts（1,705 行）——压缩系统
+
+`compact.ts` 实现了 5 级压缩流水线（详见第 5 章）。它的核心是 `compactMessages()` 函数：
+
+```typescript
+// compact.ts 的核心结构（简化版）
+export async function compactMessages(
+  messages: Message[],
+  options: CompactOptions,
+): Promise<CompactResult> {
+  // 1. 尝试 Context Collapse（无损压缩）
+  const collapsed = tryContextCollapse(messages);
+  if (collapsed.savedTokens > options.minSavings) {
+    return collapsed;
+  }
+  
+  // 2. 尝试 Microcompact（轻量摘要）
+  if (options.allowMicrocompact) {
+    const micro = await microcompact(messages);
+    if (micro.savedTokens > options.minSavings) {
+      return micro;
+    }
+  }
+  
+  // 3. 全量摘要压缩
+  return await fullCompact(messages, options);
+}
+```
+
+### QueryEngine.ts（1,155 行）——会话管理
+
+`QueryEngine.ts` 是会话级的管理器，包装了 `query()` 函数：
+
+```typescript
+class QueryEngine {
+  private messages: Message[] = [];
+  private totalUsage: TokenUsage = { input: 0, output: 0, cache_read: 0 };
+  
+  async processUserTurn(input: UserInput): Promise<AsyncIterator<Event>> {
+    // 1. 预处理（斜杠命令、文件附件等）
+    const processed = await this.preprocess(input);
+    
+    // 2. 追加到历史
+    this.messages.push(userMessage(processed));
+    
+    // 3. 调用核心循环
+    const stream = query(this.messages, this.tools, this.options);
+    
+    // 4. 处理结果（更新历史、追踪 Token）
+    return this.wrapStream(stream);
+  }
+}
+```
+
+### main.tsx（4,683 行）——UI 层
+
+`main.tsx` 是最大的文件，包含了整个终端 UI 的实现。它使用 React（通过 Ink 框架）渲染终端界面：
+
+```typescript
+// main.tsx 的顶层结构（简化版）
+function App({ initialQuery }: AppProps) {
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [isProcessing, setIsProcessing] = useState(false);
+  
+  return (
+    <Box flexDirection="column">
+      <MessageList messages={messages} />
+      <ToolExecutionStatus />
+      <PromptInput
+        onSubmit={handleUserInput}
+        disabled={isProcessing}
+      />
+    </Box>
+  );
+}
+```
+
+`main.tsx` 的复杂性主要来自：
+- 虚拟消息列表（只渲染可见部分，防止大量消息时性能下降）
+- 流式渲染（token 级别的实时更新）
+- 键盘事件处理（Vim 模式、快捷键等）
+- 权限确认对话框的状态管理
+
+---
+
+## 2.9 模块依赖关系
+
+```mermaid
+graph TD
+    main["main.tsx\nUI 层"] --> QE["QueryEngine.ts\n会话管理层"]
+    QE --> query["query.ts\n核心循环"]
+    query --> api["services/api/\nAPI 服务层"]
+    query --> tools["tools/\n工具系统"]
+    query --> compact["compact.ts\n压缩系统"]
+    query --> claude["claude.ts\n提示词构建"]
+    
+    tools --> bash["BashTool.ts"]
+    tools --> file["FileReadTool.ts\nFileWriteTool.ts"]
+    tools --> agent["AgentTool/"]
+    tools --> mcp["MCPTool.ts"]
+    
+    claude --> memory["memory/\n记忆系统"]
+    claude --> skills["skills/\n技能系统"]
+    
+    subgraph 基础设施
+        auth["OAuth"]
+        history["History"]
+        hooks["hooks/"]
+        telemetry["Telemetry"]
+    end
+    
+    QE --> history
+    main --> auth
+    tools --> hooks
+    query --> telemetry
+```
+
+**关键约束**：
+- `query.ts` 不依赖 `main.tsx`（核心循环不知道 UI 的存在）
+- `tools/` 不依赖 `compact.ts`（工具不知道压缩的存在）
+- `claude.ts` 不依赖 `query.ts`（提示词构建不知道循环的存在）
+
+这些约束确保了各层的独立性，使得单元测试和模块替换成为可能。
+
+---
+
+## 2.10 构建系统
+
+Claude Code 使用 **Bun** 作为构建工具（而不是 Webpack 或 esbuild）。Bun 的选择有几个原因：
+
+1. **编译时 Feature Gate**：Bun 支持 `feature()` 函数，可以在编译时删除特定代码块
+2. **TypeScript 原生支持**：不需要额外的 TypeScript 编译步骤
+3. **快速构建**：Bun 的构建速度比 Webpack 快 10-100 倍
+4. **单文件输出**：可以将整个应用打包为单个可执行文件
+
+构建产物：
+- `claude`：Linux/macOS 可执行文件
+- `claude.exe`：Windows 可执行文件
+- `@anthropic-ai/claude-code`：npm 包（包含 Node.js 可执行文件）
+
+---
+
+## 2.11 测试架构
+
+Claude Code 的测试分为三层：
+
+### 单元测试（`src/__tests__/`）
+
+针对单个函数或模块的测试，不需要 API 调用：
+
+```typescript
+// 测试压缩算法
+describe('contextCollapse', () => {
+  it('should collapse tool result pairs', () => {
+    const messages = createTestMessages([
+      { type: 'tool_use', tool: 'bash', input: 'ls' },
+      { type: 'tool_result', content: 'file1.ts\nfile2.ts' },
+    ]);
+    
+    const result = contextCollapse(messages);
+    expect(result.savedTokens).toBeGreaterThan(0);
+  });
+});
+```
+
+### 集成测试（`src/__integration_tests__/`）
+
+需要真实 API 调用的测试，使用测试账号：
+
+```typescript
+// 测试完整的工具调用流程
+describe('BashTool integration', () => {
+  it('should execute safe commands', async () => {
+    const result = await runQuery('列出当前目录的文件');
+    expect(result.toolsUsed).toContain('bash');
+    expect(result.content).toMatch(/\.(ts|js|md)/);
+  });
+});
+```
+
+### Eval 测试（`evals/`）
+
+基于真实用户场景的质量评估，用于衡量提示词工程的效果：
+
+```typescript
+// eval: 记忆系统的召回准确率
+const eval = {
+  name: 'memory_recall_accuracy',
+  cases: [
+    {
+      setup: 'Tell Claude your preferred code style is 2-space indent',
+      query: 'Write a new function',
+      expected: 'Uses 2-space indentation',
+    },
+  ],
+};
+```
+
+Eval 测试是提示词工程的核心工具——每次修改提示词后，运行 eval 来验证改动是否有效（详见第 10 章的「eval 驱动的提示词工程」）。
+
+---
+
+## 2.12 设计洞察
+
+**「单文件 vs 模块化」的权衡**：`claude.ts`（3,419 行）和 `main.tsx`（4,683 行）是两个超大文件，这看起来违反了「单一职责原则」。但这是有意为之的——系统提示词的各个部分高度相互依赖（一个指令可能引用另一个指令的概念），将它们分散到多个文件会增加理解成本。对于「必须整体理解才能修改」的代码，集中在一个文件中反而更好。
+
+**「Bun 编译时 Feature Gate」的安全价值**：使用 Bun 的 `feature()` 函数而不是运行时 `if (process.env.FEATURE_X)` 检查，是一个重要的安全决策。运行时检查可以被绕过（修改环境变量），但编译时删除是不可绕过的——代码根本不存在于二进制文件中。这对于内部功能（协调器、Swarm）的保护至关重要。
+
+**「三层测试」的质量保证**：单元测试、集成测试、Eval 测试三层测试覆盖了不同类型的质量问题。单元测试捕捉逻辑错误，集成测试捕捉系统交互问题，Eval 测试捕捉「模型行为是否符合预期」这类无法用传统测试验证的问题。这三层测试的组合是 AI 系统质量保证的标准实践。
+
+---
+
+> 下一章：[代理循环：AI 的心跳 →](#/docs/03-agentic-loop)
