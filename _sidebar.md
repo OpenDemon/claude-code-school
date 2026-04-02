@@ -15,19 +15,17 @@
   - [6. 工具系统与权限安全](docs/06-tools-permissions.md)
   - [7. 多 Agent 协作架构](docs/07-multi-agent.md)
   - [8. MCP 集成与扩展](docs/08-mcp-integration.md)
+  - [9. 10 种运行模式](docs/09-running-modes.md)
+  - [10. 记忆系统与 CLAUDE.md](docs/10-memory-claude-md.md)
 
 - **工程深度**
+  - [11. 宠物系统与彩蛋](docs/11-buddy-system.md)
+  - [12. 源码泄露的完整故事](docs/12-leak-story.md)
   - [13. 代码编辑策略](docs/13-code-editing-strategy.md)
   - [14. Hooks 与可扩展性](docs/14-hooks-extensibility.md)
   - [15. 技能系统](docs/15-skills-system.md)
   - [16. 最小必要组件](docs/16-minimal-components.md)
   - [17. 用户体验与终端渲染](docs/17-user-experience.md)
-
-- **进阶与彩蛋**
-  - [9. 10 种运行模式](docs/09-running-modes.md)
-  - [10. 记忆系统与 CLAUDE.md](docs/10-memory-claude-md.md)
-  - [11. 宠物系统与彩蛋](docs/11-buddy-system.md)
-  - [12. 源码泄露的完整故事](docs/12-leak-story.md)
 
 - **参考**
   - [关键数据速查表](docs/reference-key-numbers.md)
