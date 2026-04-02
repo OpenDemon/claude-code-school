@@ -11,14 +11,56 @@
     :root {
       --base-font-size: 15px;
       --theme-color: #E8632A;
-      --sidebar-width: 280px;
+      --sidebar-width: 300px;
       --sidebar-nav-link-color--active: #E8632A;
       --sidebar-nav-link-border-color--active: #E8632A;
       --code-theme-background: #1e1e2e;
       --code-theme-text: #cdd6f4;
-      --code-inline-background: #f0f0f0;
+      --code-inline-background: #2d2d3f;
       --heading-color: #1a1a2e;
     }
+
+    /* ===== 侧边栏标题单行显示 ===== */
+    .app-name-link {
+      font-weight: 700;
+      font-size: 1.0em;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      display: block;
+    }
+    .app-name {
+      white-space: nowrap;
+    }
+
+    /* ===== 强制侧边栏始终展开 ===== */
+    .sidebar {
+      left: 0 !important;
+      transform: translateX(0) !important;
+      width: var(--sidebar-width) !important;
+    }
+    body.close .sidebar {
+      transform: translateX(0) !important;
+    }
+    .sidebar-toggle {
+      display: none !important;
+    }
+    /* 内容区域左移适配更宽侧边栏 */
+    .content {
+      margin-left: var(--sidebar-width) !important;
+    }
+
+    /* ===== Sidebar group headings ===== */
+    .sidebar-nav > ul > li > p {
+      font-weight: 700;
+      color: #E8632A;
+      font-size: 0.75em;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin: 1.2em 0 0.3em;
+    }
+
+    /* ===== 标题样式 ===== */
     .markdown-section h1 {
       border-bottom: 3px solid #E8632A;
       padding-bottom: 0.4em;
@@ -39,71 +81,76 @@
       padding: 0.8em 1em;
       color: #555;
     }
-    .cover-main {
-      max-width: 640px;
+
+    /* ===== 代码块：统一黑底灰字 ===== */
+    /* 行内代码 */
+    .markdown-section code {
+      background: #1e1e2e !important;
+      color: #cdd6f4 !important;
+      border-radius: 4px;
+      padding: 0.15em 0.4em;
+      font-size: 0.88em;
     }
-    .cover-main h1 {
-      font-size: 2.4em;
-      font-weight: 800;
-      color: #1a1a2e;
-    }
-    .cover-main blockquote {
-      font-size: 1.05em;
-      color: #2a2a2a;
-      border: none;
-      background: none;
-      font-weight: 500;
-    }
-    /* 封面页背景和文字颜色修复 */
-    section.cover {
-      background: linear-gradient(135deg, #e8f0f8 0%, #d0e4f0 50%, #b8d4e8 100%) !important;
-    }
-    section.cover .cover-main > p {
-      color: #1a1a2e;
-      font-weight: 500;
-    }
-    section.cover .cover-main ul {
-      list-style: none;
-      padding: 0;
-    }
-    section.cover .cover-main ul li {
-      color: #1a1a2e;
-      font-size: 1.05em;
-      padding: 0.2em 0;
-    }
-    .app-name-link {
-      font-weight: 700;
-      font-size: 1.1em;
-    }
-    /* Sidebar group headings */
-    .sidebar-nav > ul > li > p {
-      font-weight: 700;
-      color: #E8632A;
-      font-size: 0.8em;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      margin: 1.2em 0 0.3em;
-    }
-    /* Code block styling */
+    /* 代码块 */
     .markdown-section pre {
+      background: #1e1e2e !important;
       border-radius: 8px;
+      border: none;
     }
-    /* Callout boxes */
+    .markdown-section pre > code {
+      background: transparent !important;
+      color: #cdd6f4 !important;
+      padding: 0;
+      font-size: 0.875em;
+    }
+    /* Prism 高亮覆盖 */
+    .token.comment,
+    .token.prolog,
+    .token.doctype,
+    .token.cdata {
+      color: #6c7086;
+    }
+    .token.punctuation { color: #cdd6f4; }
+    .token.property,
+    .token.tag,
+    .token.boolean,
+    .token.number,
+    .token.constant,
+    .token.symbol { color: #fab387; }
+    .token.selector,
+    .token.attr-name,
+    .token.string,
+    .token.char,
+    .token.builtin { color: #a6e3a1; }
+    .token.operator,
+    .token.entity,
+    .token.url,
+    .language-css .token.string,
+    .style .token.string { color: #89dceb; }
+    .token.atrule,
+    .token.attr-value,
+    .token.keyword { color: #cba6f7; }
+    .token.function { color: #89b4fa; }
+    .token.regex,
+    .token.important,
+    .token.variable { color: #f38ba8; }
+
+    /* ===== Callout boxes ===== */
     .tip, .warning, .danger {
       border-radius: 6px;
       padding: 0.8em 1em;
       margin: 1em 0;
     }
-    /* 强制侧边栏始终展开 */
-    .sidebar {
-      left: 0 !important;
-      transform: translateX(0) !important;
+
+    /* ===== 分页导航（下一章/上一章）样式修复 ===== */
+    .pagination-item {
+      display: flex !important;
+      align-items: center;
     }
-    body.close .sidebar {
-      transform: translateX(0) !important;
-    }
-    .sidebar-toggle {
-      display: none !important;
+    .pagination-item a {
+      display: block !important;
+      pointer-events: auto !important;
+      cursor: pointer !important;
     }
   </style>
 </head>
@@ -162,7 +209,8 @@
   <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
   <script>
     mermaid.initialize({ startOnLoad: false, theme: 'default' });
-    window.$docsify.plugins = [
+    // 追加 Mermaid 插件，不覆盖已有插件（如 docsify-pagination）
+    window.$docsify.plugins = (window.$docsify.plugins || []).concat([
       function(hook) {
         hook.doneEach(function() {
           document.querySelectorAll('.mermaid').forEach(function(el) {
@@ -180,7 +228,7 @@
           });
         });
       }
-    ];
+    ]);
   </script>
   <!-- Code highlight -->
   <script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-typescript.min.js"></script>
